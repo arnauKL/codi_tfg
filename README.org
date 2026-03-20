@@ -1,4 +1,0 @@
-#+title: TFG
-#+author: Arnau K.
-
-Source code for my bachelor's thesis.
