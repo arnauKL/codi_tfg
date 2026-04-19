@@ -1,2 +1,8 @@
 *~
 pt_env/
+checkpoints/
+data/
+logs/
+notebooks/
+notes.md
+*test*

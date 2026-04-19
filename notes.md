@@ -1,16 +1,19 @@
-# notes vàries
+# Names of models:
 
-Per veure versió de cuda:
+## Model 1:
 
-```sh
-nvidia-smi
-```
+Is the base one
+- Balanced dataset (equal number of PD and HC)
+- Crop de 76x76x76
+- Fet sobre les imatges de `derivatives/dat-reg-v6`
 
-En el server: 12.9
+### Model_1_unbalanced:
+Same model but using all the images, not caring about balancing.
 
+El resultat és que el model no balancejat prediu totes les classes com a Parkinsons.
 
-## python dependencies
+# Models pendents de provar:
 
-- pytorch
-- numpy
-- nibabel
+- Model_1_padding_balanced:
+- Model_1_padding_balanced:
+
