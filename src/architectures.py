@@ -76,3 +76,44 @@ class ParkinsonClassifier2D(nn.Module):
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
         return self.fc2(x)
+    
+
+class ParkinsonClassifier3D_deeper(nn.Module):
+    # like the previous but bow has a 4th layer
+    def __init__(self, dropout_rate=0.3):
+        super(ParkinsonClassifier3D, self).__init__()
+        
+        # We increase filters: 16 -> 32 -> 64 -> 128
+        self.features = nn.Sequential(
+            nn.Conv3d(1, 16, 3, padding=1),
+            nn.BatchNorm3d(16),
+            nn.ReLU(),
+            nn.MaxPool3d(2), # Output: 64^3
+            
+            nn.Conv3d(16, 32, 3, padding=1),
+            nn.BatchNorm3d(32),
+            nn.ReLU(),
+            nn.MaxPool3d(2), # Output: 32^3
+            
+            nn.Conv3d(32, 64, 3, padding=1),
+            nn.BatchNorm3d(64),
+            nn.ReLU(),
+            nn.MaxPool3d(2), # Output: 16^3
+            
+            nn.Conv3d(64, 128, 3, padding=1),
+            nn.BatchNorm3d(128),
+            nn.ReLU(),
+            nn.MaxPool3d(2)  # Output: 8^3
+        )
+        
+        self.gap = nn.AdaptiveAvgPool3d(1)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.fc1 = nn.Linear(128, 64) # Adjusted input size for FC
+        self.fc2 = nn.Linear(64, 1)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.gap(x).view(x.size(0), -1)
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        return self.fc2(x)

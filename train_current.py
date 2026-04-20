@@ -5,24 +5,23 @@ import datetime
 import csv
 import torch
 import pandas as pd
-import numpy as np
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from monai.data import Dataset as MonaiDataset
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report
 
 # import modules
 # ==============
 from src.architectures import ParkinsonClassifier2D
-from src.transforms import get_2d_sum_striatum_transforms
+from src.transforms import get_2d_sum_transforms_padding
 
 CONFIG = {
-    "model_name": "2D_nomes_striatum_rawderiv",
+    "model_name": "2D_suma_rawderiv_128_croppadding",
     "data_path": "ppmi_raw_n_derivative_mapping.csv",
-    "roi_size": (76, 76, 76),
+    "roi_size": (128, 128, 128),
     "batch_size": 2,
-    "lr": 0.0001,
+    "lr": 0.00010,
     "epochs": 100,
     "dropout": 0.3,
     "val_size": 0.2,
@@ -63,11 +62,11 @@ train_df, test_df = train_test_split(
 
 # Loaders
 train_files = [{"image": p, "label": l} for p, l in zip(train_df['path'], train_df['label'])]
-train_ds = MonaiDataset(data=train_files, transform=get_2d_sum_striatum_transforms(CONFIG["roi_size"]))
+train_ds = MonaiDataset(data=train_files, transform=get_2d_sum_transforms_padding(CONFIG["roi_size"]))
 train_loader = DataLoader(train_ds, batch_size=CONFIG["batch_size"], shuffle=True)
 
 test_files = [{"image": p, "label": l} for p, l in zip(test_df['path'], test_df['label'])]
-test_ds = MonaiDataset(data=test_files, transform=get_2d_sum_striatum_transforms(CONFIG["roi_size"]))
+test_ds = MonaiDataset(data=test_files, transform=get_2d_sum_transforms_padding(CONFIG["roi_size"]))
 test_loader = DataLoader(test_ds, batch_size=CONFIG["batch_size"])
 
 
@@ -122,7 +121,8 @@ for epoch in range(CONFIG["epochs"]):
     with open(log_file, mode='a', newline='') as f:
         csv.writer(f).writerow([epoch+1, avg_train_loss, avg_val_loss, val_acc])
 
-    print(f"\nEpoch {epoch+1}/{CONFIG['epochs']}\tVal Acc: {val_acc:.4f}", end='')
+    print(f"\nEpoch {epoch+1}/{CONFIG['epochs']}", end='')
+    print(f"\tTrain Loss: {avg_train_loss:.4f} Val Loss: {avg_val_loss:.4f} Val Acc: {val_acc:.4f}", end='')
 
     # Save Best Model
     if avg_val_loss < best_val_loss:
@@ -145,8 +145,7 @@ with torch.no_grad():
         all_labels.extend(labels.cpu().numpy())
 
 report = classification_report(all_labels, all_preds, target_names=['Healthy', 'PD'])
-
 with open(os.path.join(output_dir, "final_results.txt"), "w") as f:
     f.write(report)
 
-print("\nTraining done")
+print("\nTraining complete.")

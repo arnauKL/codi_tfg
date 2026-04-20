@@ -5,25 +5,23 @@ import datetime
 import csv
 import torch
 import pandas as pd
-import numpy as np
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from monai.data import Dataset as MonaiDataset
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report
 
 # import modules
 # ==============
-from src.architectures import ParkinsonClassifier2D
-from src.transforms import get_2d_sum_striatum_transforms
+from src.architectures import ParkinsonClassifier3D
 
 CONFIG = {
-    "model_name": "2D_nomes_striatum_rawderiv",
+    "model_name": "3D_cropping_allimages",
     "data_path": "ppmi_raw_n_derivative_mapping.csv",
     "roi_size": (76, 76, 76),
     "batch_size": 2,
     "lr": 0.0001,
-    "epochs": 100,
+    "epochs": 80,
     "dropout": 0.3,
     "val_size": 0.2,
     "random_seed": 42
@@ -43,7 +41,7 @@ print(f"Starting run: {run_name}")
 print(f"Results will be saved to: {output_dir}")
 
 
-# preparing data
+# preparing data (balancing)
 # ==============
 df = pd.read_csv(datadir)
 
@@ -61,20 +59,29 @@ train_df, test_df = train_test_split(
     random_state=CONFIG["random_seed"]
 )
 
+# import transforms from the src module
+#from src.transforms import get_padding_cropping_transforms
+# I'll do this in this same file temporarily:
+import torch
+from src.transforms import get_3d_transforms
+
+########################################
+
+
 # Loaders
 train_files = [{"image": p, "label": l} for p, l in zip(train_df['path'], train_df['label'])]
-train_ds = MonaiDataset(data=train_files, transform=get_2d_sum_striatum_transforms(CONFIG["roi_size"]))
+train_ds = MonaiDataset(data=train_files, transform=get_3d_transforms(CONFIG['roi_size']))
 train_loader = DataLoader(train_ds, batch_size=CONFIG["batch_size"], shuffle=True)
 
 test_files = [{"image": p, "label": l} for p, l in zip(test_df['path'], test_df['label'])]
-test_ds = MonaiDataset(data=test_files, transform=get_2d_sum_striatum_transforms(CONFIG["roi_size"]))
+test_ds = MonaiDataset(data=test_files, transform=get_3d_transforms(CONFIG['roi_size']))
 test_loader = DataLoader(test_ds, batch_size=CONFIG["batch_size"])
 
 
 # Model, loss and optimizer
 # =========================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = ParkinsonClassifier2D(dropout_rate=CONFIG["dropout"]).to(device)
+model = ParkinsonClassifier3D(dropout_rate=CONFIG["dropout"]).to(device)
 criterion = torch.nn.BCEWithLogitsLoss()
 optimizer = optim.Adam(model.parameters(), lr=CONFIG["lr"])
 
