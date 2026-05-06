@@ -6,3 +6,4 @@ logs/
 notebooks/
 notes.md
 *test*
+outputs/*/*.pth
