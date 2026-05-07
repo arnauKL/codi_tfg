@@ -60,6 +60,24 @@ def get_2d_sum_transforms(roi_size=(76, 76, 76)):
         NormalizeIntensityd(keys=["image"]),
     ])
 
+def get_2d_sum_transforms_padding(spatial_size):
+    # Full-volume sum projection with pad-or-crop. For raw images.
+
+    return Compose([
+        LoadImaged(keys=["image"]),
+        EnsureChannelFirstd(keys=["image"]),
+        # Standardize orientation first
+        Orientationd(keys=["image"], axcodes="RAS"), 
+        # This handles BOTH cases: pads if < 128, crops if > 128 (128 being spatial_size)
+        ResizeWithPadOrCropd(
+            keys=["image"], 
+            spatial_size=spatial_size, 
+            mode="constant"
+        ),
+        Lambdad(keys=["image"], func=_sum_slices),
+        NormalizeIntensityd(keys=["image"]),
+    ])
+
 
 # (test): Only sum slices 30 to 45 where the striatum usually lives
 # This gave really bad results, probably because I'm hardcoding the values instead of using percentiles or proportions,
@@ -85,91 +103,75 @@ def get_2d_sum_striatum_transforms(roi_size=(76, 76, 76)):
         NormalizeIntensityd(keys=["image"]),
     ])
 
-def get_2d_sum_transforms_padding(spatial_size):
-    # Full-volume sum projection with pad-or-crop. For raw images.
-
-    return Compose([
-        LoadImaged(keys=["image"]),
-        EnsureChannelFirstd(keys=["image"]),
-        # Standardize orientation first
-        Orientationd(keys=["image"], axcodes="RAS"), 
-        # This handles BOTH cases: pads if < 128, crops if > 128 (128 being spatial_size)
-        ResizeWithPadOrCropd(
-            keys=["image"], 
-            spatial_size=spatial_size, 
-            mode="constant"
-        ),
-        Lambdad(keys=["image"], func=_sum_slices),
-        NormalizeIntensityd(keys=["image"]),
-    ])
-
 
 ############# 2.5D
+# Why 2.5D?
+# Pretrained 2D backbones (ResNet18, EfficientNet, ...) expect a
+# 3-channel input. By treating each orthogonal view as one channel we
+# get richer spatial context than a single sum-projection --- the model
+# sees the striatum from three directions --- while still benefiting from
+# strong ImageNet initialisation without the complexity of a full 3D CNN.
 
 
-def _extract_orthogonal_slices(x, out_size=76):
+def _make_orthogonal_extractor(out_hw):
     """
-    Takes the 3 central slices of a 3D volume (one per axis) and stacks
-    them into a 3-channel 2D image.
+    Returns a function that extracts the 3 central orthogonal slices
+    (axial, coronal, sagittal) and stacks them as a (3, H, W) tensor.
  
-    Input:  x  shape (1, H, W, D)  - single-channel 3D volume
-    Output:    shape (3, out_size, out_size)
- 
-    The three channels are:
-      0 -> axial    (z = D//2)   - the "top-down" view, most informative for
-                                   the comma/full-stop DaT pattern
-      1 -> coronal  (y = W//2)   - front-back view
-      2 -> sagittal (x = H//2)   - left-right view
- 
-    All three are bilinearly resized to `out_size x out_size` so the tensor
-    has a fixed shape regardless of input volume dimensions.
+    out_hw : (height, width) that every slice is resized to.
     """
-    h, w, d = x.shape[1], x.shape[2], x.shape[3]
+    def extract(x):
+        # x: (1, H, W, D)  after EnsureChannelFirst
+        _, H, W, D = x.shape
+        axial    = x[0, :, :, D // 2]   # (H, W) — top-down / axial
+        coronal  = x[0, :, W // 2, :]   # (H, D) — front / coronal
+        sagittal = x[0, H // 2, :, :]   # (W, D) — side / sagittal
  
-    axial    = x[0, :,    :,    d // 2]   # (H, W)
-    coronal  = x[0, :,    w//2, :]        # (H, D)
-    sagittal = x[0, h//2, :,    :]        # (W, D)
+        size = (out_hw[0], out_hw[1])
  
-    def resize(s):
-        # s is a 2D tensor; add batch+channel dims, interpolate, remove them
-        return F.interpolate(
-            s.unsqueeze(0).unsqueeze(0).float(),
-            size=(out_size, out_size),
-            mode="bilinear",
-            align_corners=False,
-        ).squeeze()
+        def resize(s):
+            return F.interpolate(
+                s.unsqueeze(0).unsqueeze(0).float(),
+                size=size,
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze()
  
-    return torch.stack([resize(axial), resize(coronal), resize(sagittal)], dim=0)
+        # Stack → (3, H, W)  — looks like an RGB image to ResNet
+        return torch.stack([resize(axial), resize(coronal), resize(sagittal)], dim=0)
  
+    return extract
  
 def get_25d_transforms(roi_size=(76, 76, 76)):
     """
     3-channel orthogonal-slice transform for registered images.
     Output shape: (3, roi_size[0], roi_size[1])
+
     Designed for ParkinsonClassifier25D (pretrained ResNet18).
+    Center-crop then extract 3 orthogonal central slices.
+    Use for registered images + a 2D pretrained backbone.
     """
-    out_size = roi_size[0]
+    out_hw = (roi_size[0], roi_size[1])
     return Compose([
         LoadImaged(keys=["image"]),
         EnsureChannelFirstd(keys=["image"]),
         CenterSpatialCropd(keys=["image"], roi_size=roi_size),
         NormalizeIntensityd(keys=["image"]),
-        Lambdad(keys=["image"], func=lambda x: _extract_orthogonal_slices(x, out_size)),
+        Lambdad(keys=["image"], func=_make_orthogonal_extractor(out_hw)),
     ])
  
  
 def get_25d_transforms_padding(spatial_size=(76, 76, 76)):
     """
-    3-channel orthogonal-slice transform for raw (unregistered) images.
-    Pads/crops first to make variable-size volumes uniform, then slices.
-    Output shape: (3, spatial_size[0], spatial_size[1])
+    Pad-or-crop then extract 3 orthogonal central slices.
+    Use for raw (unregistered) images + a 2D pretrained backbone.
     """
-    out_size = spatial_size[0]
+    out_hw = (spatial_size[0], spatial_size[1])
     return Compose([
         LoadImaged(keys=["image"]),
         EnsureChannelFirstd(keys=["image"]),
         Orientationd(keys=["image"], axcodes="RAS"),
         ResizeWithPadOrCropd(keys=["image"], spatial_size=spatial_size, mode="constant"),
         NormalizeIntensityd(keys=["image"]),
-        Lambdad(keys=["image"], func=lambda x: _extract_orthogonal_slices(x, out_size)),
+        Lambdad(keys=["image"], func=_make_orthogonal_extractor(out_hw)),
     ])
