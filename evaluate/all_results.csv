@@ -1,0 +1,8 @@
+run,model_name,precision,recall,f1,roi_size,balanced
+3D_cropping_allimages_20260420_002740,3D_cropping_allimages,0.88,0.88,0.88,"[76, 76, 76]",True
+2D_suma_rawderiv_20260420_015439,2D_suma_rawderiv,0.92,0.92,0.92,"[76, 76, 76]",True
+2D_nomes_striatum_rawderiv_20260419_195313,2D_nomes_striatum_rawderiv,0.83,0.83,0.83,"[76, 76, 76]",True
+2D_suma_rawderiv_20260419_235949,2D_suma_rawderiv,0.88,0.88,0.88,"[76, 76, 76]",True
+2D_suma_rawderiv_128_croppadding_20260420_105143,2D_suma_rawderiv_128_croppadding,0.77,0.77,0.77,"[128, 128, 128]",True
+3D_padding_128_allimagesUnbalanced_20260420_005020,3D_padding_128_allimagesUnbalanced,0.87,0.87,0.87,"[128, 128, 128]",False
+3D_padding_128_allimages_20260420_002020,3D_padding_128_allimages,0.71,0.71,0.71,"[128, 128, 128]",True
