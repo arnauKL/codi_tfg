@@ -32,7 +32,7 @@ METRIC_LABELS = {
     "precision": "Precision",
 }
 
-# Color per data source, still, needs to be tweaked
+# Color per data source, still needs to be tweaked
 COLOR = {
     "registered": "#4C72B0",   # blue
     "raw":        "#55A868",   # green
