@@ -1,0 +1,15 @@
+{
+    "data": "raw",
+    "model": "3d_crop",
+    "folds": 2,
+    "roi_size": [
+        76,
+        76,
+        76
+    ],
+    "epochs": 100,
+    "lr": 0.0001,
+    "batch_size": 2,
+    "dropout": 0.3,
+    "seed": 42
+}

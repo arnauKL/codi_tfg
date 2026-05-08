@@ -31,7 +31,7 @@ from src.transforms import (
 
 # CONFIG: edit DATA_CSV if some runs used a different CSV
 OUTPUTS_DIR   = "outputs"
-DATA_CSV      = "data/ppmi_raw_n_derivative_mapping.csv"
+DATA_CSV      = "data/ppmi_baseline_mapping.csv"
 RESULTS_OUT   = "evaluate/bootstrap_results.csv"
 N_BOOTSTRAP   = 200   # number of bootstrap samples per model
 VAL_SIZE      = 0.2   # must match what you used during training
@@ -211,7 +211,7 @@ def main():
     results = pd.concat(all_rows, ignore_index=True)
     results.to_csv(RESULTS_OUT, index=False)
     print(f"\nDone! Results saved to {RESULTS_OUT}")
-    print(f"Shape: {results.shape}  ({results['model_name'].nunique()} models × {N_BOOTSTRAP} bootstrap samples each)")
+    print(f"Shape: {results.shape}  ({results['model_name'].nunique()} models {N_BOOTSTRAP} bootstrap samples each)")
 
 
 if __name__ == "__main__":
