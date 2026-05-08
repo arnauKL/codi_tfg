@@ -65,7 +65,7 @@ from src.transforms import (
 
 #  CSV paths for each data source
 DATA_CSVS = {
-    "registered": "data/ppmi_baseline_mapping.csv",
+    "registered": "data/ppmi_derivative_sesBL_mapping.csv",
     "raw":        "data/ppmi_rawdata_sesBL_mapping.csv",
 }
 
@@ -101,6 +101,14 @@ def build_model_and_transform(model_key: str, data_key: str, roi_size: tuple, dr
         transform = (get_25d_transforms(roi_size) if registered
                      else get_25d_transforms_padding(roi_size))
         split_lr  = True
+
+    elif model_key == "med3d":
+        model     = ParkinsonClassifierMed3D(
+                        dropout_rate=dropout,
+                        weights_path="pretrained/resnet_10.pth")
+        transform = (get_3d_transforms(roi_size) if registered
+                    else get_3d_padding_cropping_transforms(roi_size))
+        split_lr  = True   # lower LR on backbone, higher on head — same as 25d
 
     else:
         # Thx Francesc Castro

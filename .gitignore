@@ -7,3 +7,5 @@ notebooks/
 notes.md
 *test*
 outputs/*/*.pth
+mednetWeights
+outputs/

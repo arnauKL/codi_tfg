@@ -124,9 +124,9 @@ def _make_orthogonal_extractor(out_hw):
     def extract(x):
         # x: (1, H, W, D)  after EnsureChannelFirst
         _, H, W, D = x.shape
-        axial    = x[0, :, :, D // 2]   # (H, W) — top-down / axial
-        coronal  = x[0, :, W // 2, :]   # (H, D) — front / coronal
-        sagittal = x[0, H // 2, :, :]   # (W, D) — side / sagittal
+        axial    = x[0, :, :, D // 2]   # (H, W) top-down / axial
+        coronal  = x[0, :, W // 2, :]   # (H, D) front / coronal
+        sagittal = x[0, H // 2, :, :]   # (W, D) side / sagittal
  
         size = (out_hw[0], out_hw[1])
  
@@ -138,9 +138,35 @@ def _make_orthogonal_extractor(out_hw):
                 align_corners=False,
             ).squeeze()
  
-        # Stack → (3, H, W)  — looks like an RGB image to ResNet
+        # Stack: (3, H, W), it looks like an RGB image to ResNet
         return torch.stack([resize(axial), resize(coronal), resize(sagittal)], dim=0)
  
+    return extract
+
+
+def _make_mip_extractor(out_hw):
+    """
+    Maximum Intensity Projection along each axis.
+    The striatum hotspot always ends up in the projection even if
+    it's not centred.
+    """
+    def extract(x):
+        import torch.nn.functional as F
+        # x: (1, H, W, D)
+        axial,    _ = x[0].max(dim=2)   # max over D -> (H, W)
+        coronal,  _ = x[0].max(dim=1)   # max over W -> (H, D)
+        sagittal, _ = x[0].max(dim=0)   # max over H -> (W, D)
+
+        size = (out_hw[0], out_hw[1])
+        def resize(s):
+            import torch.nn.functional as F
+            return F.interpolate(
+                s.unsqueeze(0).unsqueeze(0).float(),
+                size=size, mode="bilinear", align_corners=False,
+            ).squeeze()
+
+        return torch.stack([resize(axial), resize(coronal), resize(sagittal)], dim=0)
+
     return extract
  
 def get_25d_transforms(roi_size=(76, 76, 76)):
@@ -158,7 +184,7 @@ def get_25d_transforms(roi_size=(76, 76, 76)):
         EnsureChannelFirstd(keys=["image"]),
         CenterSpatialCropd(keys=["image"], roi_size=roi_size),
         NormalizeIntensityd(keys=["image"]),
-        Lambdad(keys=["image"], func=_make_orthogonal_extractor(out_hw)),
+        Lambdad(keys=["image"], func=_make_mip_extractor(out_hw)),
     ])
  
  
@@ -174,5 +200,5 @@ def get_25d_transforms_padding(spatial_size=(76, 76, 76)):
         Orientationd(keys=["image"], axcodes="RAS"),
         ResizeWithPadOrCropd(keys=["image"], spatial_size=spatial_size, mode="constant"),
         NormalizeIntensityd(keys=["image"]),
-        Lambdad(keys=["image"], func=_make_orthogonal_extractor(out_hw)),
+        Lambdad(keys=["image"], func=_make_mip_extractor(out_hw)),
     ])

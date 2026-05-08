@@ -167,3 +167,67 @@ class ParkinsonClassifier25D(nn.Module):
         x = self.dropout(x)
         return self.fc(x)          # -> (B, 1)
  
+import os
+
+# ResNet-10 for MedicalNet. Why this over ImageNet transfer?
+# The Med3D weights come from tasks on real medical volumes, so
+# the low-level filters already respond to the kinds of intensity
+# patterns found in nuclear medicine imaging. This is a much
+# closer domain match than natural images.
+class ParkinsonClassifierMed3D(nn.Module):
+    """
+    ResNet-10 backbone from MedicalNet (pretrained on 23 medical
+    segmentation datasets including SPECT). Fine-tuned for binary
+    PD classification from DaTSCAN volumes.
+    Input : (B, 1, H, W, D)
+    Output: (B, 1) raw logit
+    """
+    def __init__(self, dropout_rate=0.3, weights_path="pretrained/resnet_10.pth"):
+        super().__init__()
+
+        # Minimal ResNet-10 block matching MedicalNet's architecture
+        def conv_bn_relu(in_c, out_c, stride=1):
+            return nn.Sequential(
+                nn.Conv3d(in_c, out_c, 3, stride=stride, padding=1, bias=False),
+                nn.BatchNorm3d(out_c),
+                nn.ReLU(inplace=True),
+            )
+
+        self.layer0 = nn.Sequential(
+            nn.Conv3d(1, 64, kernel_size=7, stride=2, padding=3, bias=False),
+            nn.BatchNorm3d(64), nn.ReLU(inplace=True),
+            nn.MaxPool3d(kernel_size=3, stride=2, padding=1),
+        )
+        self.layer1 = conv_bn_relu(64, 64)
+        self.layer2 = conv_bn_relu(64, 128, stride=2)
+        self.layer3 = conv_bn_relu(128, 256, stride=2)
+        self.gap     = nn.AdaptiveAvgPool3d(1)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.fc      = nn.Linear(256, 1)
+
+        if weights_path and os.path.exists(weights_path):
+            self._load_pretrained(weights_path)
+            print(f"  Med3D weights loaded from {weights_path}")
+        else:
+            print(f"  [WARN] Med3D weights not found at {weights_path} "
+                  f"— training from scratch")
+
+    def _load_pretrained(self, path):
+        pretrained = torch.load(path, map_location="cpu")
+        # MedicalNet saves under a 'state_dict' key
+        state = pretrained.get("state_dict", pretrained)
+        # Strip 'module.' prefix if saved with DataParallel
+        state = {k.replace("module.", ""): v for k, v in state.items()}
+        # Load only matching keys (skip the segmentation head)
+        missing, unexpected = self.load_state_dict(state, strict=False)
+        print(f"  Pretrained keys loaded. Missing: {len(missing)}, "
+              f"Unexpected: {len(unexpected)}")
+
+    def forward(self, x):
+        x = self.layer0(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.gap(x).view(x.size(0), -1)
+        x = self.dropout(x)
+        return self.fc(x)
