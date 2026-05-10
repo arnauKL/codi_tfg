@@ -50,8 +50,10 @@ from sklearn.metrics import (
 sys.path.insert(0, os.path.abspath("."))
 from src.architectures import (
     ParkinsonClassifier3D,
+    ParkinsonClassifier3D_deeper,
     ParkinsonClassifier2D,
     ParkinsonClassifier25D,
+    ParkinsonClassifierMed3D
 )
 from src.transforms import (
     get_3d_transforms,
@@ -90,6 +92,12 @@ def build_model_and_transform(model_key: str, data_key: str, roi_size: tuple, dr
                      else get_3d_padding_cropping_transforms(roi_size))
         split_lr  = False
 
+    if model_key == "3d_crop_deeper":
+        model     = ParkinsonClassifier3D_deeper(dropout_rate=dropout)
+        transform = (get_3d_transforms(roi_size) if registered
+                     else get_3d_padding_cropping_transforms(roi_size))
+        split_lr  = False
+
     elif model_key == "2d_sum":
         model     = ParkinsonClassifier2D(dropout_rate=dropout)
         transform = (get_2d_sum_transforms(roi_size) if registered
@@ -105,33 +113,46 @@ def build_model_and_transform(model_key: str, data_key: str, roi_size: tuple, dr
     elif model_key == "med3d":
         model     = ParkinsonClassifierMed3D(
                         dropout_rate=dropout,
-                        weights_path="pretrained/resnet_10.pth")
+                        weights_path="/home/akarel/src_tfg/mednetWeights/pretrain/resnet_10.pth")
         transform = (get_3d_transforms(roi_size) if registered
                     else get_3d_padding_cropping_transforms(roi_size))
-        split_lr  = True   # lower LR on backbone, higher on head — same as 25d
+        split_lr  = True   # lower LR on backbone, higher on head: same as 25d
 
     else:
         # Thx Francesc Castro
-        raise ValueError(f"Unknown model key: '{model_key}'. Choose from: 3d_crop, 2d_sum, 25d_resnet")
+        raise ValueError(f"Unknown model key: '{model_key}'. Choose from: 3d_crop, 3d_crop_deeper, 2d_sum, 25d_resnet, med3d")
 
     return model, transform, split_lr
 
 
 def build_optimizer(model, base_lr: float, split_lr: bool):
     """
-    For pretrained models (25d_resnet for now) use a 10x lower LR on the backbone
-    so we don't destroy the pretrained weights.
+    For pretrained models use a 10x lower LR on the backbone so we don't
+    destroy pretrained weights, and a full LR on the new classification head.
     For scratch models use the same LR everywhere.
+ 
+    Works for both 25d_resnet (backbone = model.features) and
+    med3d (backbone = model.layer0/1/2/3) by using named parameters
+    and checking which ones belong to the head.
     """
     if not split_lr:
         return optim.Adam(model.parameters(), lr=base_lr)
-
-    backbone_params = list(model.features.parameters())
-    head_params     = list(model.fc.parameters()) + list(model.dropout.parameters())
+ 
+    # Head parameters are always fc + dropout, everything else is backbone
+    head_names = {"fc", "dropout"}
+    backbone_params, head_params = [], []
+    for name, param in model.named_parameters():
+        top_level = name.split(".")[0]   # e.g. "layer0", "features", "fc"
+        if top_level in head_names:
+            head_params.append(param)
+        else:
+            backbone_params.append(param)
+ 
     return optim.Adam([
         {"params": backbone_params, "lr": base_lr / 10},
         {"params": head_params,     "lr": base_lr},
     ])
+ 
 
 
 #  One fold: train + evaluate
@@ -276,7 +297,7 @@ def parse_args():
                    choices=["registered", "raw"],
                    help="Which image set to use")
     p.add_argument("--model",      required=True,
-                   choices=["3d_crop", "2d_sum", "25d_resnet"],
+                   choices=["3d_crop", "3d_crop_deeper", "2d_sum", "25d_resnet", "med3d"],
                    help="Model + transform combination")
     p.add_argument("--folds",      type=int,   default=2,
                    help="Number of CV folds (2 = fast screening, 5 = final)")

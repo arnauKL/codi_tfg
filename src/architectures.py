@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# architecture for the CNNs
+
+# architectures for the CNNs
 
 
 class ParkinsonClassifier3D(nn.Module):
@@ -174,60 +175,93 @@ import os
 # the low-level filters already respond to the kinds of intensity
 # patterns found in nuclear medicine imaging. This is a much
 # closer domain match than natural images.
+
+"""
+It uses MedicalNet's ResNet class directly so weight keys match exactly.
+The segmentation head (conv_seg) is stripped and replaced with a
+global average pool + classification head.
+"""
+
+from src.resnet import resnet10
+
 class ParkinsonClassifierMed3D(nn.Module):
     """
-    ResNet-10 backbone from MedicalNet (pretrained on 23 medical
-    segmentation datasets including SPECT). Fine-tuned for binary
-    PD classification from DaTSCAN volumes.
+    MedicalNet ResNet-10 backbone for DaTSCAN classification.
+
+    The MedicalNet weights were trained on a segmentation task, so
+    the architecture has a conv_seg head ion want.
+      1. Build the full ResNet from resnet.py (so weight keys match)
+      2. Load pretrained weights (now ALL backbone keys will match)
+      3. Replace conv_seg with GlobalAvgPool + classification head bcs classifier
+
     Input : (B, 1, H, W, D)
-    Output: (B, 1) raw logit
+    Output: (B, 1) raw logit yea
     """
-    def __init__(self, dropout_rate=0.3, weights_path="pretrained/resnet_10.pth"):
+
+    def __init__(self,
+                 dropout_rate=0.3,
+                 weights_path="mednetWeights/pretrain/resnet_10.pth",
+                 roi_size=(76, 76, 76)):
         super().__init__()
 
-        # Minimal ResNet-10 block matching MedicalNet's architecture
-        def conv_bn_relu(in_c, out_c, stride=1):
-            return nn.Sequential(
-                nn.Conv3d(in_c, out_c, 3, stride=stride, padding=1, bias=False),
-                nn.BatchNorm3d(out_c),
-                nn.ReLU(inplace=True),
-            )
-
-        self.layer0 = nn.Sequential(
-            nn.Conv3d(1, 64, kernel_size=7, stride=2, padding=3, bias=False),
-            nn.BatchNorm3d(64), nn.ReLU(inplace=True),
-            nn.MaxPool3d(kernel_size=3, stride=2, padding=1),
+        # Build full MedicalNet ResNet (with conv_seg)
+        # num_seg_classes=2 is arbitrary since Im removin conv_seg anyway
+        backbone = resnet10(
+            sample_input_D=roi_size[0],
+            sample_input_H=roi_size[1],
+            sample_input_W=roi_size[2],
+            num_seg_classes=2,
+            shortcut_type='B',
+            no_cuda=False, # please
         )
-        self.layer1 = conv_bn_relu(64, 64)
-        self.layer2 = conv_bn_relu(64, 128, stride=2)
-        self.layer3 = conv_bn_relu(128, 256, stride=2)
-        self.gap     = nn.AdaptiveAvgPool3d(1)
-        self.dropout = nn.Dropout(dropout_rate)
-        self.fc      = nn.Linear(256, 1)
 
+        # Load weights
         if weights_path and os.path.exists(weights_path):
-            self._load_pretrained(weights_path)
+            checkpoint = torch.load(weights_path, map_location='cpu')
+            # MedicalNet saves under 'state_dict' key
+            state = checkpoint.get('state_dict', checkpoint)
+            # Strip 'module.' prefix if saved with DataParallel
+            state = {k.replace('module.', ''): v for k, v in state.items()}
+
+            missing, unexpected = backbone.load_state_dict(state, strict=False)
+            # Now 'missing' should only be the conv_seg keys (which we remove)
+            # and 'unexpected' should be empty hopefully
+            backbone_missing  = [k for k in missing    if 'conv_seg' not in k]
+            backbone_unexpected = [k for k in unexpected if 'conv_seg' not in k]
+            print(f"  Med3D: backbone missing (excl. conv_seg): {len(backbone_missing)}")
+            print(f"  Med3D: unexpected keys (excl. conv_seg):  {len(backbone_unexpected)}")
+            if backbone_missing:
+                print(f"    Missing: {backbone_missing[:5]}")
             print(f"  Med3D weights loaded from {weights_path}")
         else:
-            print(f"  [WARN] Med3D weights not found at {weights_path} "
-                  f"— training from scratch")
+            print(f"  [WARN] Weights not found at {weights_path} — training from scratch")
 
-    def _load_pretrained(self, path):
-        pretrained = torch.load(path, map_location="cpu")
-        # MedicalNet saves under a 'state_dict' key
-        state = pretrained.get("state_dict", pretrained)
-        # Strip 'module.' prefix if saved with DataParallel
-        state = {k.replace("module.", ""): v for k, v in state.items()}
-        # Load only matching keys (skip the segmentation head)
-        missing, unexpected = self.load_state_dict(state, strict=False)
-        print(f"  Pretrained keys loaded. Missing: {len(missing)}, "
-              f"Unexpected: {len(unexpected)}")
+        # Keep only the backbone, discard conv_seg
+        self.conv1   = backbone.conv1
+        self.bn1     = backbone.bn1
+        self.relu    = backbone.relu
+        self.maxpool = backbone.maxpool
+        self.layer1  = backbone.layer1
+        self.layer2  = backbone.layer2
+        self.layer3  = backbone.layer3
+        self.layer4  = backbone.layer4
+        # conv_seg is NOT kept, dummy warning
+
+        # Classification head
+        # layer4 outputs 512 channels (BasicBlock.expansion=1)
+        self.gap     = nn.AdaptiveAvgPool3d(1)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.fc      = nn.Linear(512, 1)
 
     def forward(self, x):
-        x = self.layer0(x)
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.gap(x).view(x.size(0), -1)
+        x = self.layer4(x)
+        x = self.gap(x).view(x.size(0), -1)   # (B, 512)
         x = self.dropout(x)
-        return self.fc(x)
+        return self.fc(x)                     # (B, 1)
