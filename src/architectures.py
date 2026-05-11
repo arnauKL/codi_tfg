@@ -127,9 +127,8 @@ class ParkinsonClassifier2D(nn.Module):
     
 
 #  2.5D ResNet18 (pretrained on ImageNet)
-# Why this is worth trying
 # Training a 3D-CNN from scratch needs a lot of data to converge well.
-# Reusing `ImageNe`t weights gives the network a strong visual prior from
+# Reusing `ImageNet` weights gives the network a strong visual prior from
 # the start: edges, textures, shapes: all useful even for medical images.
 # The 2.5D trick lets us exploit those 2D weights on volumetric data.
 
@@ -145,7 +144,7 @@ class ParkinsonClassifier25D(nn.Module):
             the backbone, but each channel carries a different spatial view
             of the DaTSCAN volume.
  
-    Output: (B, 1)  raw logit — use BCEWithLogitsLoss.
+    Output: (B, 1)  raw logit, use BCEWithLogitsLoss.
     """
     def __init__(self, dropout_rate=0.3, pretrained=True):
         super().__init__()
