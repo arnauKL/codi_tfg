@@ -13,7 +13,7 @@ classical ML baselines on tabular data, and multimodal fusion for Parkinson's di
 - [`classic_ml/`](classic_ml/): Scikit-learn baselines on tabular data, including a multimodal integration script
 - [`analysis/`](analysis/): Post-hoc evaluation and explainability (Grad-CAM, SHAP)
 - [`evaluate/`](evaluate/): Performance metrics and boxplot generation over [`outputs/`](outputs/)
-- [`outputs/`](outputs/): Training results and metrics; model weights (`.pth`) are kept local and not pushed
+- [`outputs/`](outputs/): Training results and metrics
 - [`data/`](data/): Patient image path–to–label mappings; not pushed
 
 
@@ -24,3 +24,12 @@ classical ML baselines on tabular data, and multimodal fusion for Parkinson's di
 - scikit-learn
 - pandas, numpy
 - SHAP, grad-cam
+
+
+## Thesis report
+
+See my other repository hosting my report [here](github.com/arnauKL/tfg_writing) to find the full pdf and source code.
+
+
+## License
+Source code is licensed under the [BSD 3-Clause License](LICENSE).
